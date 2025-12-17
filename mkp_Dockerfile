@@ -1,0 +1,65 @@
+# ============================================================================
+# Dockerfile for MoustiKAP-P Shiny App
+# Built for deployment with shiny2docker or manual Docker deployment
+# ============================================================================
+
+FROM rocker/shiny:4.3.2
+
+# System dependencies
+RUN apt-get update && apt-get install -y \
+    libcurl4-gnutls-dev \
+    libssl-dev \
+    libxml2-dev \
+    libfontconfig1-dev \
+    libfreetype6-dev \
+    libpng-dev \
+    libtiff5-dev \
+    libjpeg-dev \
+    libharfbuzz-dev \
+    libfribidi-dev \
+    libgdal-dev \
+    libgeos-dev \
+    libproj-dev \
+    libudunits2-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install R packages
+RUN R -e "install.packages(c( \
+    'shiny', \
+    'bslib', \
+    'leaflet', \
+    'plotly', \
+    'tidyverse', \
+    'DT', \
+    'sf' \
+), repos='https://cloud.r-project.org/', dependencies=TRUE)"
+
+# Create app directory
+RUN mkdir -p /srv/shiny-server/mkp-app
+
+# Copy app files
+COPY app.R /srv/shiny-server/mkp-app/
+COPY R/ /srv/shiny-server/mkp-app/R/
+COPY data/ /srv/shiny-server/mkp-app/data/
+COPY www/ /srv/shiny-server/mkp-app/www/
+
+# Set permissions
+RUN chown -R shiny:shiny /srv/shiny-server/mkp-app
+
+# Configure shiny-server
+RUN echo "run_as shiny;\n\
+server {\n\
+  listen 3838;\n\
+  location / {\n\
+    site_dir /srv/shiny-server/mkp-app;\n\
+    log_dir /var/log/shiny-server;\n\
+    directory_index on;\n\
+  }\n\
+}" > /etc/shiny-server/shiny-server.conf
+
+# Expose port
+EXPOSE 3838
+
+# Start shiny-server
+CMD ["/usr/bin/shiny-server"]

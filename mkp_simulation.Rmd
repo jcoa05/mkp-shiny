@@ -1,0 +1,2414 @@
+---
+title: "MKP-KAP Survey: Statistical Analysis Plan and Data Simulation"
+subtitle: "Mosquitoes, Knowledge, Attitudes, Practices in Metropolitan France"
+author: "Statistical Analysis Plan"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    number_sections: true
+    theme: flatly
+    highlight: tango
+    code_folding: show
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+
+  echo = TRUE,
+  message = FALSE,
+
+  warning = FALSE,
+  fig.width = 10,
+  fig.height = 6,
+  fig.align = "center",
+  cache = FALSE
+)
+```
+
+# Environment Setup and Configuration
+
+## Load Required Packages
+
+```{r load-packages}
+# Core data manipulation
+library(tidyverse)
+
+# Table creation
+library(gtsummary)
+library(gt)
+
+# Visualization
+library(ggplot2)
+library(patchwork)
+library(scales)
+
+# Additional utilities
+library(janitor)
+library(labelled)
+
+# Set seed for reproducibility
+set.seed(20251205)
+
+# Define color palette for visualizations
+region_colors <- c(
+
+  "Île-de-France" = "#1f77b4",
+  "Auvergne-Rhône-Alpes" = "#ff7f0e",
+  "Occitanie" = "#2ca02c",
+
+  "Nouvelle-Aquitaine" = "#d62728",
+  "Hauts-de-France" = "#9467bd",
+  "Grand Est" = "#8c564b",
+  "Provence-Alpes-Côte d'Azur" = "#e377c2",
+  "Pays de la Loire" = "#7f7f7f",
+  "Bretagne" = "#bcbd22",
+  "Normandie" = "#17becf",
+  "Bourgogne-Franche-Comté" = "#aec7e8",
+  "Centre-Val de Loire" = "#ffbb78",
+  "Corse" = "#98df8a"
+)
+
+# Custom theme for plots
+theme_mkp <- function() {
+
+
+  theme_minimal(base_size = 12) +
+    theme(
+      plot.title = element_text(face = "bold", size = 14),
+      plot.subtitle = element_text(color = "gray40", size = 11),
+      axis.title = element_text(face = "bold"),
+      legend.position = "bottom",
+      legend.title = element_text(face = "bold"),
+      panel.grid.minor = element_blank(),
+      strip.text = element_text(face = "bold")
+    )
+}
+```
+
+## Define Simulation Parameters
+
+```{r simulation-parameters}
+# Total sample size
+N <- 4000
+
+# Regional population proportions (INSEE 2025)
+region_props <- tibble(
+  region = c(
+    "Île-de-France", "Auvergne-Rhône-Alpes", "Occitanie", "Nouvelle-Aquitaine",
+    "Hauts-de-France", "Grand Est", "Provence-Alpes-Côte d'Azur",
+    "Pays de la Loire", "Bretagne", "Normandie",
+    "Bourgogne-Franche-Comté", "Centre-Val de Loire", "Corse"
+  ),
+  prop = c(0.1877, 0.1245, 0.0935, 0.0933, 0.0900, 0.0836, 0.0790,
+           0.0593, 0.0524, 0.0504, 0.0421, 0.0389, 0.0054)
+)
+
+# Age distribution (adults 18-79)
+age_props <- tibble(
+  age_group = c("18-29", "30-39", "40-49", "50-59", "60-69", "70-79"),
+  prop = c(0.173, 0.154, 0.157, 0.164, 0.152, 0.131)
+)
+age_props$prop <- age_props$prop / sum(age_props$prop)  # Normalize
+
+# Sex distribution
+sex_props <- c("Femme" = 0.516, "Homme" = 0.484)
+
+# Education distribution
+education_props <- tibble(
+  education = c("Sans le bac", "Bac", "Bac+2", "Bac+3/4", "Bac+5+"),
+  prop = c(0.40, 0.17, 0.14, 0.13, 0.16)
+)
+
+# CSP distribution (full adult population)
+csp_props <- tibble(
+csp = c(
+    "Agriculteur(trice)",
+    "Artisan(e), commerçant(e), chef d'entreprise",
+    "Cadre ou profession libérale",
+    "Profession intermédiaire",
+    "Employé(e)",
+    "Ouvrier(e)",
+    "Etudiant(e)",
+    "Sans activité professionnelle",
+    "Retraité(e)"
+  ),
+  prop = c(0.015, 0.050, 0.120, 0.130, 0.140, 0.110, 0.050, 0.085, 0.300)
+)
+csp_props$prop <- csp_props$prop / sum(csp_props$prop)  # Normalize
+
+# Urbanization distribution
+urban_props <- tibble(
+  urbanization = c("Urbain dense", "Urbain intermédiaire", 
+                   "Rural périurbain", "Rural isolé"),
+  prop = c(0.38, 0.29, 0.19, 0.14)
+)
+```
+
+# Reference Data for French Geography
+
+## Create Regional Classification
+
+```{r regional-classification}
+# Define geographic zones for gradient simulation
+# Southern regions have higher mosquito exposure and risk perception
+region_classification <- tibble(
+  region = c(
+    "Île-de-France", "Auvergne-Rhône-Alpes", "Occitanie", "Nouvelle-Aquitaine",
+    "Hauts-de-France", "Grand Est", "Provence-Alpes-Côte d'Azur",
+    "Pays de la Loire", "Bretagne", "Normandie",
+    "Bourgogne-Franche-Comté", "Centre-Val de Loire", "Corse"
+  ),
+  # Geographic zone: South (high exposure), Central, North (low exposure)
+  geo_zone = c(
+    "Central",   # Île-de-France
+    "South",     # Auvergne-Rhône-Alpes
+    "South",     # Occitanie
+    "South",     # Nouvelle-Aquitaine
+    "North",     # Hauts-de-France
+    "Central",   # Grand Est
+    "South",     # PACA
+    "Central",   # Pays de la Loire
+    "North",     # Bretagne
+    "North",     # Normandie
+    "Central",   # Bourgogne-Franche-Comté
+    "Central",   # Centre-Val de Loire
+    "South"      # Corse
+  ),
+  # Aedes albopictus colonization status (proportion of départements colonized)
+  aedes_colonized = c(
+    1.00,  # Île-de-France: 100%
+    1.00,  # Auvergne-Rhône-Alpes: 100%
+    1.00,  # Occitanie: 100%
+    0.92,  # Nouvelle-Aquitaine: 11/12
+    0.40,  # Hauts-de-France: 2/5
+    0.60,  # Grand Est: 6/10
+    1.00,  # PACA: 100%
+    0.80,  # Pays de la Loire: 4/5
+    0.50,  # Bretagne: 2/4
+    0.40,  # Normandie: 2/5
+    0.88,  # Bourgogne-Franche-Comté: 7/8
+    0.83,  # Centre-Val de Loire: 5/6
+    1.00   # Corse: 100%
+  ),
+  # Average summer temperature (July max, °C)
+  summer_temp = c(
+    25, 26, 29, 26, 22, 25, 30, 24, 21, 22, 25, 25, 29
+  ),
+  # Climate suitability for mosquitoes (1=High, 2=Moderate, 3=Low)
+  climate_suitability = c(
+    2, 2, 1, 1, 3, 2, 1, 2, 3, 3, 2, 2, 1
+  ),
+  # Median income (€/year, INSEE Filosofi 2021)
+  median_income = c(
+    25210, 23800, 22010, 22710, 21420, 22960, 22820, 
+    23050, 23240, 22480, 22750, 22780, 22390
+  ),
+  # Poverty rate (%)
+  poverty_rate = c(
+    16.1, 13.3, 17.5, 13.8, 18.0, 15.1, 17.4, 
+    11.0, 11.1, 13.7, 13.4, 13.5, 18.1
+  ),
+  # Urban density distribution (proportion urban dense)
+  prop_urban_dense = c(
+    0.65, 0.28, 0.25, 0.20, 0.35, 0.30, 0.45, 
+    0.25, 0.20, 0.22, 0.18, 0.25, 0.25
+  )
+)
+
+# Define mosquito exposure multiplier by geographic zone (strong gradient)
+# OR 2.5-3.5 for South vs North
+zone_multipliers <- tibble(
+  geo_zone = c("South", "Central", "North"),
+  bite_multiplier = c(3.0, 1.5, 1.0),      # Bite frequency
+  risk_multiplier = c(2.8, 1.4, 1.0),      # Risk perception
+  protection_multiplier = c(2.5, 1.3, 1.0) # Protection usage
+)
+```
+  
+## Create Département and Postal Code Reference
+
+```{r departement-postal-codes}
+# Simplified postal code reference by région
+# Each région gets representative postal codes weighted by population
+
+postal_code_reference <- tibble(
+  region = c(
+    rep("Île-de-France", 8),
+    rep("Auvergne-Rhône-Alpes", 12),
+    rep("Occitanie", 13),
+    rep("Nouvelle-Aquitaine", 12),
+    rep("Hauts-de-France", 5),
+    rep("Grand Est", 10),
+    rep("Provence-Alpes-Côte d'Azur", 6),
+    rep("Pays de la Loire", 5),
+    rep("Bretagne", 4),
+    rep("Normandie", 5),
+    rep("Bourgogne-Franche-Comté", 8),
+    rep("Centre-Val de Loire", 6),
+    rep("Corse", 2)
+  ),
+  departement = c(
+    # Île-de-France
+    "75", "77", "78", "91", "92", "93", "94", "95",
+    # Auvergne-Rhône-Alpes
+    "01", "03", "07", "15", "26", "38", "42", "43", "63", "69", "73", "74",
+    # Occitanie
+    "09", "11", "12", "30", "31", "32", "34", "46", "48", "65", "66", "81", "82",
+    # Nouvelle-Aquitaine
+    "16", "17", "19", "23", "24", "33", "40", "47", "64", "79", "86", "87",
+    # Hauts-de-France
+    "02", "59", "60", "62", "80",
+    # Grand Est
+    "08", "10", "51", "52", "54", "55", "57", "67", "68", "88",
+    # PACA
+    "04", "05", "06", "13", "83", "84",
+    # Pays de la Loire
+    "44", "49", "53", "72", "85",
+    # Bretagne
+    "22", "29", "35", "56",
+    # Normandie
+    "14", "27", "50", "61", "76",
+    # Bourgogne-Franche-Comté
+    "21", "25", "39", "58", "70", "71", "89", "90",
+    # Centre-Val de Loire
+    "18", "28", "36", "37", "41", "45",
+    # Corse
+    "2A", "2B"
+  ),
+  # Aedes colonization status by département
+  aedes_present = c(
+    # Île-de-France: all colonized
+    rep(1, 8),
+    # Auvergne-Rhône-Alpes: all colonized
+    rep(1, 12),
+    # Occitanie: all colonized
+    rep(1, 13),
+    # Nouvelle-Aquitaine: all except Creuse (23)
+    1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1,
+    # Hauts-de-France: only 02 and 60 colonized
+    1, 0, 1, 0, 0,
+    # Grand Est: 08, 10, 55, 88 not colonized
+    0, 0, 1, 1, 1, 0, 1, 1, 1, 0,
+    # PACA: all colonized
+    rep(1, 6),
+    # Pays de la Loire: all colonized (Mayenne added 2024)
+    rep(1, 5),
+    # Bretagne: 35, 56 colonized; 22, 29 not
+    0, 0, 1, 1,
+    # Normandie: 27, 76 colonized
+    0, 1, 0, 0, 1,
+    # Bourgogne-Franche-Comté: most colonized except some
+    1, 1, 1, 1, 1, 1, 1, 1,
+    # Centre-Val de Loire: 28 not colonized
+    1, 0, 1, 1, 1, 1,
+    # Corse: all colonized
+    rep(1, 2)
+  ),
+  # Relative population weight within région (simplified)
+  pop_weight = c(
+    # Île-de-France
+    0.35, 0.10, 0.12, 0.10, 0.12, 0.12, 0.05, 0.04,
+    # Auvergne-Rhône-Alpes
+    rep(1/12, 12),
+    # Occitanie
+    rep(1/13, 13),
+    # Nouvelle-Aquitaine
+    rep(1/12, 12),
+    # Hauts-de-France
+    0.05, 0.45, 0.15, 0.25, 0.10,
+    # Grand Est
+    rep(1/10, 10),
+    # PACA
+    0.05, 0.03, 0.22, 0.40, 0.20, 0.10,
+    # Pays de la Loire
+    rep(1/5, 5),
+    # Bretagne
+    rep(1/4, 4),
+    # Normandie
+    rep(1/5, 5),
+    # Bourgogne-Franche-Comté
+    rep(1/8, 8),
+    # Centre-Val de Loire
+    rep(1/6, 6),
+    # Corse
+    0.6, 0.4
+  )
+) %>%
+  # Generate representative postal codes from département numbers
+  mutate(
+    postal_prefix = case_when(
+      nchar(departement) == 1 ~ paste0("0", departement),
+      departement == "2A" ~ "20",
+      departement == "2B" ~ "20",
+      TRUE ~ departement
+    )
+  )
+
+# Function to generate realistic postal code
+generate_postal_code <- function(dept_prefix, n = 1) {
+  
+  suffix <- sprintf("%03d", sample(0:999, n, replace = TRUE))
+  paste0(dept_prefix, suffix)
+}
+```
+
+# Simulation Functions
+
+## Helper Functions for Ordinal Response Simulation
+
+```{r helper-functions}
+# Function to simulate ordinal responses with geographic and demographic effects
+simulate_ordinal <- function(n, n_levels, base_probs, 
+                             multiplier = 1, 
+                             shift_direction = "higher") {
+  # Adjust probabilities based on multiplier
+  # Higher multiplier shifts distribution toward higher (or lower) values
+  
+  if (multiplier == 1) {
+    probs <- base_probs
+  } else {
+    # Create weight vector that increases for higher categories
+    weights <- seq(1, n_levels)
+    if (shift_direction == "lower") {
+      weights <- rev(weights)
+    }
+    
+    # Apply multiplier to shift distribution
+    adjusted_weights <- base_probs * (weights ^ (log(multiplier)))
+    probs <- adjusted_weights / sum(adjusted_weights)
+  }
+  
+  sample(1:n_levels, n, replace = TRUE, prob = probs)
+}
+
+# Function to simulate Likert scale (1-7) responses
+simulate_likert7 <- function(n, mean_score = 4, sd_score = 1.5, 
+                             multiplier = 1, 
+                             higher_is_more = TRUE) {
+  # Generate continuous latent variable
+  latent <- rnorm(n, mean = mean_score, sd = sd_score)
+  
+  # Apply multiplier effect
+  if (multiplier != 1) {
+    shift <- log(multiplier) * 0.8
+    if (higher_is_more) {
+      latent <- latent + shift
+    } else {
+      latent <- latent - shift
+    }
+  }
+  
+  # Discretize to 1-7 scale
+  response <- round(latent)
+  response <- pmax(1, pmin(7, response))
+  
+  return(response)
+}
+
+# Function to simulate multiple choice (select all that apply)
+simulate_multiple_choice <- function(n, n_options, base_probs, 
+                                     multiplier = 1,
+                                     exclusive_option = NULL) {
+  results <- matrix(0, nrow = n, ncol = n_options)
+  
+  for (i in seq_len(n)) {
+    # Adjust probabilities
+    probs <- base_probs * c(rep(multiplier, length(base_probs) - 1), 1)
+    probs <- pmin(probs, 0.95)  
+    
+    # Generate selections
+    selected <- rbinom(n_options, 1, probs)
+    
+    # Handle exclusive option (e.g., "none of the above")
+    if (!is.null(exclusive_option) && selected[exclusive_option] == 1) {
+      selected <- rep(0, n_options)
+      selected[exclusive_option] <- 1
+    }
+    
+    results[i, ] <- selected
+  }
+  
+  return(results)
+}
+```
+
+# Data Simulation
+
+## Section A: Demographics
+
+```{r simulate-section-a}
+# Simulate base demographic data
+df_sim <- tibble(
+  id = 1:N,
+  
+# A1: Sex
+  A1_sex = sample(
+    names(sex_props), 
+    N, 
+    replace = TRUE, 
+    prob = sex_props
+  ),
+  
+  # A2: Age group
+  A2_age = sample(
+    age_props$age_group, 
+    N, 
+    replace = TRUE, 
+    prob = age_props$prop
+  ),
+  
+  # A3: Region
+  A3_region = sample(
+    region_props$region, 
+    N, 
+    replace = TRUE, 
+    prob = region_props$prop
+  )
+)
+
+# Add regional characteristics
+df_sim <- df_sim %>%
+  left_join(region_classification, by = c("A3_region" = "region")) %>%
+  left_join(zone_multipliers, by = "geo_zone")
+
+# A4: Education (with age gradient: younger more educated)
+df_sim <- df_sim %>%
+  mutate(
+    edu_modifier = case_when(
+      A2_age %in% c("18-29", "30-39") ~ c(0.25, 0.15, 0.18, 0.20, 0.22),
+      A2_age %in% c("40-49", "50-59") ~ c(0.38, 0.18, 0.15, 0.14, 0.15),
+      TRUE ~ c(0.55, 0.18, 0.12, 0.08, 0.07)  # 60+
+    )
+  ) %>%
+  rowwise() %>%
+  mutate(
+    A4_education = sample(
+      education_props$education,
+      1,
+      prob = edu_modifier
+    )
+  ) %>%
+  ungroup() %>%
+  select(-edu_modifier)
+
+# A5: Postal code (based on region and département)
+df_sim <- df_sim %>%
+  rowwise() %>%
+  mutate(
+    dept_data = list(
+      postal_code_reference %>%
+        filter(region == A3_region) %>%
+        sample_n(1, weight = pop_weight)
+    ),
+    A5_departement = dept_data$departement,
+    A5_postal_code = generate_postal_code(dept_data$postal_prefix, 1),
+    aedes_present_dept = dept_data$aedes_present
+  ) %>%
+  ungroup() %>%
+  select(-dept_data)
+
+# A6: CSP (with age and education correlation)
+df_sim <- df_sim %>%
+  mutate(
+    A6_csp = case_when(
+      # Retirees
+      A2_age %in% c("60-69", "70-79") & runif(n()) < 0.6 ~ "Retraité(e)",
+      # Students
+      A2_age == "18-29" & runif(n()) < 0.15 ~ "Etudiant(e)",
+      # Cadres more likely with higher education
+      A4_education == "Bac+5+" & runif(n()) < 0.5 ~ "Cadre ou profession libérale",
+      A4_education == "Bac+3/4" & runif(n()) < 0.3 ~ "Cadre ou profession libérale",
+      # Default sampling
+      TRUE ~ sample(csp_props$csp, n(), replace = TRUE, prob = csp_props$prop)
+    )
+  )
+
+# A7: Financial difficulty (correlated with region poverty rate)
+df_sim <- df_sim %>%
+  mutate(
+    # Higher poverty rate = more likely to report difficulty
+    difficulty_prob = poverty_rate / 100 + 0.15,
+    A7_financial_difficulty = case_when(
+      runif(n()) < difficulty_prob * 0.3 ~ 1L,  # Very difficult
+      runif(n()) < difficulty_prob * 0.6 ~ 2L,  # Difficult
+      runif(n()) < difficulty_prob ~ 3L,        # Somewhat difficult
+      TRUE ~ 4L                                  # Not difficult
+    )
+  ) %>%
+  select(-difficulty_prob)
+
+# Add urbanization (correlated with region)
+df_sim <- df_sim %>%
+  rowwise() %>%
+  mutate(
+    urban_probs = list(c(
+      prop_urban_dense,
+      0.29,
+      0.19 * (1 - prop_urban_dense/0.38),
+      0.14 * (1 - prop_urban_dense/0.38)
+    )),
+    urbanization = sample(
+      urban_props$urbanization,
+      1,
+      prob = urban_probs / sum(urban_probs)
+    )
+  ) %>%
+  ungroup() %>%
+  select(-urban_probs)
+```
+
+## Section B: Outdoor Exposure
+
+```{r simulate-section-b}
+# Base probabilities for outdoor time (6 levels)
+outdoor_base_probs <- c(0.15, 0.30, 0.25, 0.15, 0.10, 0.05)
+
+df_sim <- df_sim %>%
+  mutate(
+    # B1: Private outdoor spaces (higher in rural, warmer regions)
+    B1_private_outdoor = map2_int(
+      1, 
+      case_when(
+        urbanization %in% c("Rural périurbain", "Rural isolé") ~ 1.5,
+        TRUE ~ 1.0
+      ) * ifelse(geo_zone == "South", 1.2, 1.0),
+      ~ simulate_ordinal(1, 6, outdoor_base_probs, .y, "higher")
+    ),
+    
+    # B2: Shared green spaces
+    B2_shared_green = map_int(
+      1,
+      ~ simulate_ordinal(1, 6, outdoor_base_probs, 1.0, "higher")
+    ),
+    
+    # B3: Public commercial outdoor spaces
+    B3_public_commercial = map2_int(
+      1,
+      case_when(
+        urbanization == "Urbain dense" ~ 1.3,
+        TRUE ~ 0.9
+      ),
+      ~ simulate_ordinal(1, 6, outdoor_base_probs, .y, "higher")
+    ),
+    
+    # B4: Remote natural areas
+    B4_natural_areas = map2_int(
+      1,
+      case_when(
+        urbanization %in% c("Rural périurbain", "Rural isolé") ~ 1.4,
+        TRUE ~ 0.8
+      ),
+      ~ simulate_ordinal(1, 6, outdoor_base_probs, .y, "higher")
+    )
+  )
+
+# B5: Spaces where reduced time due to mosquitoes (multiple choice)
+# More likely in South, where colonized
+b5_base_probs <- c(0.25, 0.15, 0.10, 0.12, 0.45)  # Options 1-4 + "No reduction"
+
+df_sim <- df_sim %>%
+  rowwise() %>%
+  mutate(
+    b5_adj_probs = list({
+      probs <- b5_base_probs * c(
+        bite_multiplier, bite_multiplier, bite_multiplier, 
+        bite_multiplier, 1/bite_multiplier
+      )
+      probs / sum(probs)
+    }),
+    B5_reduced_space_1 = as.integer(B1_private_outdoor > 1 && 
+                                     runif(1) < b5_adj_probs[[1]]),
+    B5_reduced_space_2 = as.integer(B2_shared_green > 1 && 
+                                     runif(1) < b5_adj_probs[[2]]),
+    B5_reduced_space_3 = as.integer(B3_public_commercial > 1 && 
+                                     runif(1) < b5_adj_probs[[3]]),
+    B5_reduced_space_4 = as.integer(B4_natural_areas > 1 && 
+                                     runif(1) < b5_adj_probs[[4]]),
+    B5_no_reduction = as.integer(
+      B5_reduced_space_1 == 0 & B5_reduced_space_2 == 0 & 
+      B5_reduced_space_3 == 0 & B5_reduced_space_4 == 0
+    )
+  ) %>%
+  ungroup() %>%
+  select(-b5_adj_probs)
+```
+
+## Section C: Bite Frequency
+
+```{r simulate-section-c}
+# Base probabilities for bite frequency (7 levels)
+# 1=Never, 7=More than 3 times per day
+bite_base_probs <- c(0.25, 0.20, 0.20, 0.15, 0.10, 0.07, 0.03)
+
+df_sim <- df_sim %>%
+  mutate(
+    # C1: Bedroom bites (always asked)
+    C1_bites_bedroom = map_int(
+      bite_multiplier * aedes_colonized,
+      ~ simulate_ordinal(1, 7, bite_base_probs, .x, "higher")
+    ),
+    
+    # C2: Other indoor spaces (always asked)
+    C2_bites_indoor = map_int(
+      bite_multiplier * aedes_colonized,
+      ~ simulate_ordinal(1, 7, bite_base_probs, .x, "higher")
+    ),
+    
+    # C3: Private outdoor (SKIP if B1 == 1)
+    C3_bites_private_outdoor = case_when(
+      B1_private_outdoor == 1 ~ NA_integer_,
+      TRUE ~ map_int(
+        bite_multiplier * aedes_colonized * 1.3,
+        ~ simulate_ordinal(1, 7, bite_base_probs, .x, "higher")
+      )
+    ),
+    
+    # C4: Shared green spaces (SKIP if B2 == 1)
+    C4_bites_shared_green = case_when(
+      B2_shared_green == 1 ~ NA_integer_,
+      TRUE ~ map_int(
+        bite_multiplier * aedes_colonized * 1.2,
+        ~ simulate_ordinal(1, 7, bite_base_probs, .x, "higher")
+      )
+    ),
+    
+    # C5: Public commercial (SKIP if B3 == 1)
+    C5_bites_public = case_when(
+      B3_public_commercial == 1 ~ NA_integer_,
+      TRUE ~ map_int(
+        bite_multiplier * aedes_colonized * 1.1,
+        ~ simulate_ordinal(1, 7, bite_base_probs, .x, "higher")
+      )
+    ),
+    
+    # C6: Natural areas (SKIP if B4 == 1)
+    C6_bites_natural = case_when(
+      B4_natural_areas == 1 ~ NA_integer_,
+      TRUE ~ map_int(
+        bite_multiplier * aedes_colonized * 1.4,
+        ~ simulate_ordinal(1, 7, bite_base_probs, .x, "higher")
+      )
+    )
+  )
+```
+
+## Section D: Risk Perception and Protection Measures
+
+```{r simulate-section-d}
+# D1-D4: Likert 7-point scales for risk perception
+df_sim <- df_sim %>%
+  mutate(
+    # D1: Live in area with many mosquitoes
+    D1_many_mosquitoes = simulate_likert7(
+      n(), 
+      mean_score = 3.5, 
+      sd_score = 1.6,
+      multiplier = risk_multiplier,
+      higher_is_more = TRUE
+    ),
+    
+    # D2: High probability of being bitten
+    D2_bite_probability = simulate_likert7(
+      n(),
+      mean_score = 3.8,
+      sd_score = 1.5,
+      multiplier = risk_multiplier,
+      higher_is_more = TRUE
+    ),
+    
+    # D3: Worried about contracting viral disease
+    D3_worried_disease = simulate_likert7(
+      n(),
+      mean_score = 3.2,
+      sd_score = 1.7,
+      multiplier = risk_multiplier * 0.9,
+      higher_is_more = TRUE
+    ),
+    
+    # D4: Risk of being infected by mosquito virus
+    D4_infection_risk = simulate_likert7(
+      n(),
+      mean_score = 3.0,
+      sd_score = 1.6,
+      multiplier = risk_multiplier * 0.85,
+      higher_is_more = TRUE
+    )
+  )
+
+# D5: Protection measures used (multiple choice)
+# Base probabilities for each protection measure
+d5_base_probs <- c(
+  0.35,  # 1: Long sleeves/pants
+  0.55,  # 2: Repellents
+  0.20,  # 3: Electric trap
+  0.30,  # 4: Fan/AC
+  0.25,  # 5: Plug-in diffuser
+  0.18,  # 6: Candles/coils
+  0.35,  # 7: Window/door screens
+  0.40,  # 8: Sleep with windows closed
+  0.08,  # 9: Bed net
+  0.22,  # 10: Natural products
+  0.18,  # 11: No protection (exclusive)
+  0.05   # 12: Other
+)
+
+df_sim <- df_sim %>%
+  rowwise() %>%
+  mutate(
+    # Adjust probabilities by protection multiplier
+    d5_probs = list({
+      probs <- d5_base_probs
+      probs[1:10] <- probs[1:10] * protection_multiplier
+      probs[11] <- probs[11] / protection_multiplier
+      probs <- pmin(probs, 0.85)
+      probs
+    }),
+    D5_protection_1 = as.integer(runif(1) < d5_probs[[1]]),
+    D5_protection_2 = as.integer(runif(1) < d5_probs[[2]]),
+    D5_protection_3 = as.integer(runif(1) < d5_probs[[3]]),
+    D5_protection_4 = as.integer(runif(1) < d5_probs[[4]]),
+    D5_protection_5 = as.integer(runif(1) < d5_probs[[5]]),
+    D5_protection_6 = as.integer(runif(1) < d5_probs[[6]]),
+    D5_protection_7 = as.integer(runif(1) < d5_probs[[7]]),
+    D5_protection_8 = as.integer(runif(1) < d5_probs[[8]]),
+    D5_protection_9 = as.integer(runif(1) < d5_probs[[9]]),
+    D5_protection_10 = as.integer(runif(1) < d5_probs[[10]]),
+    D5_protection_12 = as.integer(runif(1) < d5_probs[[12]])
+  ) %>%
+  ungroup() %>%
+  select(-d5_probs) %>%
+  mutate(
+    # Calculate if any protection used
+    D5_any_protection = as.integer(
+      D5_protection_1 + D5_protection_2 + D5_protection_3 + 
+      D5_protection_4 + D5_protection_5 + D5_protection_6 + 
+      D5_protection_7 + D5_protection_8 + D5_protection_9 + 
+      D5_protection_10 + D5_protection_12 > 0
+    ),
+    # D5_protection_11 is exclusive "no protection"
+    D5_protection_11 = as.integer(D5_any_protection == 0)
+  )
+
+# D6: Information sources (multiple choice)
+d6_base_probs <- c(
+  0.15,  # 1: Health professionals
+  0.12,  # 2: Local authorities
+  0.10,  # 3: Regional authorities
+  0.08,  # 4: National authorities
+  0.35,  # 5: Social media
+  0.25,  # 6: Family/friends
+  0.05,  # 7: Educational institutions
+  0.08,  # 8: Institutional websites
+  0.30,  # 9: TV/news
+  0.12,  # 10: Print press
+  0.10,  # 11: Radio
+  0.20,  # 12: Product advertisements
+  0.15,  # 13: Don't remember
+  0.20,  # 14: None (exclusive)
+  0.03   # 15: Other
+)
+
+df_sim <- df_sim %>%
+  rowwise() %>%
+  mutate(
+    d6_probs = list({
+      probs <- d6_base_probs
+      # Higher exposure regions have more information exposure
+      probs[1:13] <- probs[1:13] * (1 + 0.3 * (risk_multiplier - 1))
+      probs[14] <- probs[14] / risk_multiplier
+      pmin(probs, 0.80)
+    }),
+    D6_info_1 = as.integer(runif(1) < d6_probs[[1]]),
+    D6_info_2 = as.integer(runif(1) < d6_probs[[2]]),
+    D6_info_3 = as.integer(runif(1) < d6_probs[[3]]),
+    D6_info_4 = as.integer(runif(1) < d6_probs[[4]]),
+    D6_info_5 = as.integer(runif(1) < d6_probs[[5]]),
+    D6_info_6 = as.integer(runif(1) < d6_probs[[6]]),
+    D6_info_7 = as.integer(runif(1) < d6_probs[[7]]),
+    D6_info_8 = as.integer(runif(1) < d6_probs[[8]]),
+    D6_info_9 = as.integer(runif(1) < d6_probs[[9]]),
+    D6_info_10 = as.integer(runif(1) < d6_probs[[10]]),
+    D6_info_11 = as.integer(runif(1) < d6_probs[[11]]),
+    D6_info_12 = as.integer(runif(1) < d6_probs[[12]]),
+    D6_info_13 = as.integer(runif(1) < d6_probs[[13]]),
+    D6_info_15 = as.integer(runif(1) < d6_probs[[15]])
+  ) %>%
+  ungroup() %>%
+  select(-d6_probs) %>%
+  mutate(
+    D6_any_info = as.integer(
+      D6_info_1 + D6_info_2 + D6_info_3 + D6_info_4 + D6_info_5 +
+      D6_info_6 + D6_info_7 + D6_info_8 + D6_info_9 + D6_info_10 +
+      D6_info_11 + D6_info_12 + D6_info_13 + D6_info_15 > 0
+    ),
+    D6_info_14 = as.integer(D6_any_info == 0)
+  )
+```
+
+## Section E: Protection Frequency (with Skip Logic)
+
+```{r simulate-section-e}
+# Section E is only shown if D5 != 11 (uses any protection)
+# Each E question is conditional on corresponding D5 selection
+
+# Base probabilities for frequency (varies by measure type)
+freq_base_5 <- c(0.20, 0.25, 0.25, 0.20, 0.10)  # 5-level scale
+freq_base_6 <- c(0.15, 0.20, 0.25, 0.20, 0.15, 0.05)  # 6-level scale
+
+df_sim <- df_sim %>%
+  mutate(
+    # E1: Long sleeves frequency (if D5_protection_1 == 1)
+    E1_freq_clothing = case_when(
+      D5_protection_11 == 1 ~ NA_integer_,
+      D5_protection_1 == 0 ~ NA_integer_,
+      TRUE ~ map_int(protection_multiplier, 
+                     ~ simulate_ordinal(1, 5, freq_base_5, .x, "higher"))
+    ),
+    
+    # E2: Repellent frequency (if D5_protection_2 == 1)
+    E2_freq_repellent = case_when(
+      D5_protection_11 == 1 ~ NA_integer_,
+      D5_protection_2 == 0 ~ NA_integer_,
+      TRUE ~ map_int(protection_multiplier,
+                     ~ simulate_ordinal(1, 6, freq_base_6, .x, "higher"))
+    ),
+    
+    # E3: Electric trap frequency (if D5_protection_3 == 1)
+    E3_freq_trap = case_when(
+      D5_protection_11 == 1 ~ NA_integer_,
+      D5_protection_3 == 0 ~ NA_integer_,
+      TRUE ~ map_int(protection_multiplier,
+                     ~ simulate_ordinal(1, 6, freq_base_6, .x, "higher"))
+    ),
+    
+    # E4: Fan/AC frequency (if D5_protection_4 == 1)
+    E4_freq_fan_ac = case_when(
+      D5_protection_11 == 1 ~ NA_integer_,
+      D5_protection_4 == 0 ~ NA_integer_,
+      TRUE ~ map_int(protection_multiplier,
+                     ~ simulate_ordinal(1, 6, freq_base_6, .x, "higher"))
+    ),
+    
+    # E5: Plug-in diffuser frequency (if D5_protection_5 == 1)
+    E5_freq_diffuser = case_when(
+      D5_protection_11 == 1 ~ NA_integer_,
+      D5_protection_5 == 0 ~ NA_integer_,
+      TRUE ~ map_int(protection_multiplier,
+                     ~ simulate_ordinal(1, 6, freq_base_6, .x, "higher"))
+    ),
+    
+    # E6: Candles/coils frequency (if D5_protection_6 == 1)
+    E6_freq_candles = case_when(
+      D5_protection_11 == 1 ~ NA_integer_,
+      D5_protection_6 == 0 ~ NA_integer_,
+      TRUE ~ map_int(protection_multiplier,
+                     ~ simulate_ordinal(1, 6, freq_base_6, .x, "higher"))
+    ),
+    
+    # E7: Closed windows frequency (if D5_protection_8 == 1)
+    E7_freq_windows = case_when(
+      D5_protection_11 == 1 ~ NA_integer_,
+      D5_protection_8 == 0 ~ NA_integer_,
+      TRUE ~ map_int(protection_multiplier,
+                     ~ simulate_ordinal(1, 5, freq_base_5, .x, "higher"))
+    ),
+    
+    # E8: Bed net frequency (if D5_protection_9 == 1)
+    E8_freq_bednet = case_when(
+      D5_protection_11 == 1 ~ NA_integer_,
+      D5_protection_9 == 0 ~ NA_integer_,
+      TRUE ~ map_int(protection_multiplier,
+                     ~ simulate_ordinal(1, 5, freq_base_5, .x, "higher"))
+    ),
+    
+    # E9: Natural products frequency (if D5_protection_10 == 1)
+    E9_freq_natural = case_when(
+      D5_protection_11 == 1 ~ NA_integer_,
+      D5_protection_10 == 0 ~ NA_integer_,
+      TRUE ~ map_int(protection_multiplier,
+                     ~ simulate_ordinal(1, 6, freq_base_6, .x, "higher"))
+    ),
+    
+    # E10: Other method frequency (if D5_protection_12 == 1)
+    E10_freq_other = case_when(
+      D5_protection_11 == 1 ~ NA_integer_,
+      D5_protection_12 == 0 ~ NA_integer_,
+      TRUE ~ map_int(protection_multiplier,
+                     ~ simulate_ordinal(1, 6, freq_base_6, .x, "higher"))
+    )
+  )
+```
+
+## Section F: Severity and Self-efficacy
+
+```{r simulate-section-f}
+# All items are Likert 7-point scales
+df_sim <- df_sim %>%
+  mutate(
+    # F1: Disease can cause hospitalization
+    F1_severity_hospital = simulate_likert7(
+      n(), mean_score = 5.0, sd_score = 1.4,
+      multiplier = 1.0, higher_is_more = TRUE
+    ),
+    
+    # F2: Can die from mosquito-borne infection
+    F2_severity_death = simulate_likert7(
+      n(), mean_score = 4.8, sd_score = 1.5,
+      multiplier = 1.0, higher_is_more = TRUE
+    ),
+    
+    # F3: Disease reduces daily functioning
+    F3_severity_function = simulate_likert7(
+      n(), mean_score = 5.2, sd_score = 1.3,
+      multiplier = 1.0, higher_is_more = TRUE
+    ),
+    
+    # F4: Know best protection measures (higher with education)
+    F4_efficacy_knowledge = simulate_likert7(
+      n(), mean_score = 4.5, sd_score = 1.5,
+      multiplier = case_when(
+        A4_education %in% c("Bac+3/4", "Bac+5+") ~ 1.3,
+        TRUE ~ 1.0
+      ),
+      higher_is_more = TRUE
+    ),
+    
+    # F5: Know where to find information
+    F5_efficacy_info = simulate_likert7(
+      n(), mean_score = 4.3, sd_score = 1.5,
+      multiplier = case_when(
+        A4_education %in% c("Bac+3/4", "Bac+5+") ~ 1.25,
+        A2_age %in% c("18-29", "30-39") ~ 1.15,
+        TRUE ~ 1.0
+      ),
+      higher_is_more = TRUE
+    ),
+    
+    # F6: Confident identifying breeding sites
+    F6_efficacy_identify = simulate_likert7(
+      n(), mean_score = 4.0, sd_score = 1.6,
+      multiplier = risk_multiplier * 0.9,
+      higher_is_more = TRUE
+    ),
+    
+    # F7: Confident eliminating breeding sites
+    F7_efficacy_eliminate = simulate_likert7(
+      n(), mean_score = 4.2, sd_score = 1.5,
+      multiplier = case_when(
+        urbanization %in% c("Rural périurbain", "Rural isolé") ~ 1.2,
+        TRUE ~ 1.0
+      ) * risk_multiplier * 0.85,
+      higher_is_more = TRUE
+    )
+  )
+```
+
+## Section G: Scenario Risk Assessment
+
+```{r simulate-section-g}
+# 6 image-based scenarios assessing bite probability
+# Likert 1-7: Extremely unlikely to Extremely likely
+# Scenarios vary by setting (outdoor/indoor, day/evening, urban/rural)
+
+df_sim <- df_sim %>%
+  mutate(
+    # G1: Garden at dusk (high risk scenario)
+    G1_scenario = simulate_likert7(
+      n(), mean_score = 5.0, sd_score = 1.4,
+      multiplier = risk_multiplier,
+      higher_is_more = TRUE
+    ),
+    
+    # G2: Urban park daytime (moderate risk)
+    G2_scenario = simulate_likert7(
+      n(), mean_score = 4.2, sd_score = 1.5,
+      multiplier = risk_multiplier * 0.9,
+      higher_is_more = TRUE
+    ),
+    
+    # G3: Indoor evening with windows open (moderate-high risk)
+    G3_scenario = simulate_likert7(
+      n(), mean_score = 4.5, sd_score = 1.5,
+      multiplier = risk_multiplier,
+      higher_is_more = TRUE
+    ),
+    
+    # G4: Forest hiking (moderate risk)
+    G4_scenario = simulate_likert7(
+      n(), mean_score = 4.8, sd_score = 1.4,
+      multiplier = risk_multiplier * 0.85,
+      higher_is_more = TRUE
+    ),
+    
+    # G5: Café terrace evening (moderate-high in south)
+    G5_scenario = simulate_likert7(
+      n(), mean_score = 4.3, sd_score = 1.5,
+      multiplier = risk_multiplier * 1.1,
+      higher_is_more = TRUE
+    ),
+    
+    # G6: Bedroom at night (lower risk with screens)
+    G6_scenario = simulate_likert7(
+      n(), mean_score = 3.5, sd_score = 1.6,
+      multiplier = risk_multiplier * 0.8,
+      higher_is_more = TRUE
+    )
+  )
+```
+
+## Section H: Cues and Beliefs
+
+```{r simulate-section-h}
+df_sim <- df_sim %>%
+  mutate(
+    # H1: Outdoor activities trigger protection thoughts
+    H1_cue_outdoor = simulate_likert7(
+      n(), mean_score = 4.5, sd_score = 1.5,
+      multiplier = risk_multiplier * 0.9,
+      higher_is_more = TRUE
+    ),
+    
+    # H2: Indoor mosquitoes trigger protection thoughts
+    H2_cue_indoor = simulate_likert7(
+      n(), mean_score = 5.0, sd_score = 1.4,
+      multiplier = risk_multiplier,
+      higher_is_more = TRUE
+    ),
+    
+    # H3: Disease alerts would trigger protection thoughts
+    H3_cue_alerts = simulate_likert7(
+      n(), mean_score = 5.3, sd_score = 1.3,
+      multiplier = 1.0,
+      higher_is_more = TRUE
+    ),
+    
+    # H4: Repellents (DEET) protect against bites
+    H4_belief_repellent_effective = simulate_likert7(
+      n(), mean_score = 5.2, sd_score = 1.4,
+      multiplier = 1.0,
+      higher_is_more = TRUE
+    ),
+    
+    # H5: Repellents (DEET) are safe
+    H5_belief_repellent_safe = simulate_likert7(
+      n(), mean_score = 4.0, sd_score = 1.6,
+      multiplier = 1.0,
+      higher_is_more = TRUE
+    ),
+    
+    # H6: Can avoid bites with protection measures
+    H6_belief_protection_works = simulate_likert7(
+      n(), mean_score = 5.0, sd_score = 1.4,
+      multiplier = 1.0,
+      higher_is_more = TRUE
+    ),
+    
+    # H7: Protection measures are more annoying than mosquitoes
+    H7_barrier_annoyance = simulate_likert7(
+      n(), mean_score = 3.5, sd_score = 1.6,
+      multiplier = 1.0,
+      higher_is_more = TRUE
+    ),
+    
+    # H8: Protection measures take too much time
+    H8_barrier_time = simulate_likert7(
+      n(), mean_score = 3.2, sd_score = 1.5,
+      multiplier = 1.0,
+      higher_is_more = TRUE
+    )
+  )
+```
+
+## Section I: Repellent Beliefs (Skip Logic)
+
+```{r simulate-section-i}
+# Section I is only shown if D5_protection_2 == 1 (uses repellent)
+
+df_sim <- df_sim %>%
+  mutate(
+    # I1: Fear health effects of repeated repellent use
+    I1_concern_health = case_when(
+      D5_protection_2 == 0 ~ NA_integer_,
+      TRUE ~ simulate_likert7(
+        n(), mean_score = 4.0, sd_score = 1.6,
+        multiplier = 1.0, higher_is_more = TRUE
+      )
+    ),
+    
+    # I2: Regular repellent use is feasible
+    I2_feasibility = case_when(
+      D5_protection_2 == 0 ~ NA_integer_,
+      TRUE ~ simulate_likert7(
+        n(), mean_score = 4.5, sd_score = 1.5,
+        multiplier = 1.0, higher_is_more = TRUE
+      )
+    ),
+    
+    # I3: Repellent use necessary given health status
+    I3_necessity = case_when(
+      D5_protection_2 == 0 ~ NA_integer_,
+      TRUE ~ simulate_likert7(
+        n(), mean_score = 4.2, sd_score = 1.5,
+        multiplier = risk_multiplier * 0.8,
+        higher_is_more = TRUE
+      )
+    ),
+    
+    # I4: Repellents are effective
+    I4_effectiveness = case_when(
+      D5_protection_2 == 0 ~ NA_integer_,
+      TRUE ~ simulate_likert7(
+        n(), mean_score = 5.0, sd_score = 1.4,
+        multiplier = 1.0, higher_is_more = TRUE
+      )
+    ),
+    
+    # I5: Benefits outweigh drawbacks
+    I5_benefit_balance = case_when(
+      D5_protection_2 == 0 ~ NA_integer_,
+      TRUE ~ simulate_likert7(
+        n(), mean_score = 4.8, sd_score = 1.5,
+        multiplier = 1.0, higher_is_more = TRUE
+      )
+    ),
+    
+    # I6: Repellent use is collective action
+    I6_collective = case_when(
+      D5_protection_2 == 0 ~ NA_integer_,
+      TRUE ~ simulate_likert7(
+        n(), mean_score = 4.3, sd_score = 1.6,
+        multiplier = 1.0, higher_is_more = TRUE
+      )
+    ),
+    
+    # I7: People around me use repellents
+    I7_social_norm = case_when(
+      D5_protection_2 == 0 ~ NA_integer_,
+      TRUE ~ simulate_likert7(
+        n(), mean_score = 4.0, sd_score = 1.5,
+        multiplier = protection_multiplier * 0.9,
+        higher_is_more = TRUE
+      )
+    ),
+    
+    # I8: Health authority recommendations encourage use
+    I8_authority = case_when(
+      D5_protection_2 == 0 ~ NA_integer_,
+      TRUE ~ simulate_likert7(
+        n(), mean_score = 4.5, sd_score = 1.5,
+        multiplier = 1.0, higher_is_more = TRUE
+      )
+    ),
+    
+    # I9: Repellents contain dangerous toxic products
+    I9_toxicity_concern = case_when(
+      D5_protection_2 == 0 ~ NA_integer_,
+      TRUE ~ simulate_likert7(
+        n(), mean_score = 4.2, sd_score = 1.6,
+        multiplier = 1.0, higher_is_more = TRUE
+      )
+    ),
+    
+    # I10: Have sufficient knowledge about repellents
+    I10_knowledge = case_when(
+      D5_protection_2 == 0 ~ NA_integer_,
+      TRUE ~ simulate_likert7(
+        n(), mean_score = 4.3, sd_score = 1.5,
+        multiplier = case_when(
+          A4_education %in% c("Bac+3/4", "Bac+5+") ~ 1.2,
+          TRUE ~ 1.0
+        ),
+        higher_is_more = TRUE
+      )
+    )
+  )
+```
+
+## Section J: Knowledge
+
+```{r simulate-section-j}
+# J1: Diseases transmitted by mosquitoes (multiple choice)
+# Correct: 1 (West Nile), 2 (Chikungunya), 3 (Zika), 4 (Dengue)
+# Incorrect: 5 (Malaria - not in metro France), 6 (Flu), 7 (HIV), 8 (Measles), 9 (Lyme)
+
+# Knowledge varies by region (higher in colonized areas) and education
+j1_correct_base <- c(0.30, 0.50, 0.45, 0.55)  # West Nile, Chik, Zika, Dengue
+j1_incorrect_base <- c(0.25, 0.08, 0.05, 0.04, 0.15)  # Malaria, Flu, HIV, Measles, Lyme
+
+df_sim <- df_sim %>%
+  rowwise() %>%
+  mutate(
+    # Knowledge multiplier based on region and education
+    know_mult = case_when(
+      geo_zone == "South" & A4_education %in% c("Bac+3/4", "Bac+5+") ~ 1.5,
+      geo_zone == "South" ~ 1.3,
+      A4_education %in% c("Bac+3/4", "Bac+5+") ~ 1.2,
+      TRUE ~ 1.0
+    ),
+    
+    # Correct answers
+    J1_west_nile = as.integer(runif(1) < min(j1_correct_base[1] * know_mult, 0.85)),
+    J1_chikungunya = as.integer(runif(1) < min(j1_correct_base[2] * know_mult, 0.90)),
+    J1_zika = as.integer(runif(1) < min(j1_correct_base[3] * know_mult, 0.90)),
+    J1_dengue = as.integer(runif(1) < min(j1_correct_base[4] * know_mult, 0.95)),
+    
+    # Incorrect answers (should be lower with higher knowledge)
+    J1_malaria = as.integer(runif(1) < j1_incorrect_base[1] / know_mult),
+    J1_flu = as.integer(runif(1) < j1_incorrect_base[2] / know_mult),
+    J1_hiv = as.integer(runif(1) < j1_incorrect_base[3] / know_mult),
+    J1_measles = as.integer(runif(1) < j1_incorrect_base[4] / know_mult),
+    J1_lyme = as.integer(runif(1) < j1_incorrect_base[5] / know_mult)
+  ) %>%
+  ungroup() %>%
+  mutate(
+    # Exclusive options
+    J1_none = as.integer(
+      J1_west_nile + J1_chikungunya + J1_zika + J1_dengue + 
+      J1_malaria + J1_flu + J1_hiv + J1_measles + J1_lyme == 0 &
+      runif(n()) < 0.05
+    ),
+    J1_dont_know = as.integer(
+      J1_west_nile + J1_chikungunya + J1_zika + J1_dengue + 
+      J1_malaria + J1_flu + J1_hiv + J1_measles + J1_lyme + J1_none == 0
+    )
+  )
+
+# J2: Personal/acquaintance contracted arbovirus
+# Higher probability in South with established transmission
+df_sim <- df_sim %>%
+  mutate(
+    j2_base_prob = case_when(
+      geo_zone == "South" ~ c(0.03, 0.08, 0.82, 0.07),
+      geo_zone == "Central" ~ c(0.01, 0.04, 0.88, 0.07),
+      TRUE ~ c(0.005, 0.02, 0.92, 0.055)
+    )
+  ) %>%
+  rowwise() %>%
+  mutate(
+    J2_arbovirus_experience = sample(1:4, 1, prob = j2_base_prob)
+  ) %>%
+  ungroup() %>%
+  select(-j2_base_prob)
+
+# J3: Cause of autochthonous outbreak
+# Correct answer: 1 (infected traveler bitten by local mosquito)
+df_sim <- df_sim %>%
+  rowwise() %>%
+  mutate(
+    j3_probs = list({
+      base <- c(0.35, 0.15, 0.08, 0.12, 0.05, 0.25)  # 1-5 + don't know
+      base[1] <- base[1] * know_mult  # Boost correct answer with knowledge
+      base[6] <- base[6] / know_mult  # Reduce "don't know"
+      base / sum(base)
+    }),
+    J3_outbreak_cause = sample(1:6, 1, prob = j3_probs)
+  ) %>%
+  ungroup() %>%
+  select(-j3_probs, -know_mult)
+
+# J4-J8: Tiger mosquito identification (image-based)
+# Assume mix of correct/incorrect identifications
+# J4, J6: Correct answer is "Yes" (1)
+# J5, J7, J8: Correct answer is "No" (2)
+j_photo_probs <- c(0.35, 0.25, 0.25, 0.15)  # Yes, No, Not sure, Don't know
+
+df_sim <- df_sim %>%
+  rowwise() %>%
+  mutate(
+    # Photo identification varies by region (more exposure = better ID)
+    photo_mult = case_when(
+      geo_zone == "South" ~ 1.3,
+      geo_zone == "Central" ~ 1.1,
+      TRUE ~ 1.0
+    ),
+    J4_photo = sample(1:4, 1, prob = {
+      p <- j_photo_probs
+      p[1] <- p[1] * photo_mult  # Correct: Yes
+      p / sum(p)
+    }),
+    J5_photo = sample(1:4, 1, prob = {
+      p <- j_photo_probs
+      p[2] <- p[2] * photo_mult  # Correct: No
+      p / sum(p)
+    }),
+    J6_photo = sample(1:4, 1, prob = {
+      p <- j_photo_probs
+      p[1] <- p[1] * photo_mult  # Correct: Yes
+      p / sum(p)
+    }),
+    J7_photo = sample(1:4, 1, prob = {
+      p <- j_photo_probs
+      p[2] <- p[2] * photo_mult  # Correct: No
+      p / sum(p)
+    }),
+    J8_photo = sample(1:4, 1, prob = {
+      p <- j_photo_probs
+      p[2] <- p[2] * photo_mult  # Correct: No
+      p / sum(p)
+    })
+  ) %>%
+  ungroup() %>%
+  select(-photo_mult)
+
+# J9: Lived in endemic territory
+j9_probs <- c(0.75, 0.10, 0.05, 0.07, 0.03)
+
+df_sim <- df_sim %>%
+  mutate(
+    J9_endemic_residence = sample(1:5, n(), replace = TRUE, prob = j9_probs)
+  )
+
+# J10: Priority measure if acquaintance infected (multiple choice)
+# Correct: 2 (protect infected person from mosquito bites)
+j10_base_probs <- c(0.20, 0.35, 0.08, 0.15, 0.07, 0.15)
+
+df_sim <- df_sim %>%
+  rowwise() %>%
+  mutate(
+    j10_probs = list({
+      p <- j10_base_probs
+      km <- case_when(
+        geo_zone == "South" & A4_education %in% c("Bac+3/4", "Bac+5+") ~ 1.4,
+        geo_zone == "South" ~ 1.2,
+        A4_education %in% c("Bac+3/4", "Bac+5+") ~ 1.15,
+        TRUE ~ 1.0
+      )
+      p[2] <- p[2] * km
+      p[6] <- p[6] / km
+      p / sum(p)
+    }),
+    J10_priority_1 = as.integer(runif(1) < j10_probs[[1]]),
+    J10_priority_2 = as.integer(runif(1) < j10_probs[[2]]),
+    J10_priority_3 = as.integer(runif(1) < j10_probs[[3]]),
+    J10_priority_4 = as.integer(runif(1) < j10_probs[[4]]),
+    J10_priority_5 = as.integer(runif(1) < j10_probs[[5]])
+  ) %>%
+  ungroup() %>%
+  select(-j10_probs) %>%
+  mutate(
+    J10_dont_know = as.integer(
+      J10_priority_1 + J10_priority_2 + J10_priority_3 + 
+      J10_priority_4 + J10_priority_5 == 0
+    )
+  )
+
+# J11: Awareness of reported cases in department
+df_sim <- df_sim %>%
+  mutate(
+    j11_probs = case_when(
+      geo_zone == "South" ~ c(0.15, 0.10, 0.08, 0.12, 0.25, 0.30),
+      geo_zone == "Central" ~ c(0.05, 0.08, 0.03, 0.07, 0.35, 0.42),
+      TRUE ~ c(0.02, 0.05, 0.01, 0.04, 0.40, 0.48)
+    )
+  ) %>%
+  rowwise() %>%
+  mutate(
+    J11_case_awareness = sample(1:6, 1, prob = j11_probs)
+  ) %>%
+  ungroup() %>%
+  select(-j11_probs)
+
+# J12: Awareness of fumigation operations
+df_sim <- df_sim %>%
+  mutate(
+    j12_probs = case_when(
+      geo_zone == "South" ~ c(0.12, 0.15, 0.45, 0.28),
+      geo_zone == "Central" ~ c(0.05, 0.08, 0.55, 0.32),
+      TRUE ~ c(0.02, 0.04, 0.60, 0.34)
+    )
+  ) %>%
+  rowwise() %>%
+  mutate(
+    J12_fumigation_awareness = sample(1:4, 1, prob = j12_probs)
+  ) %>%
+  ungroup() %>%
+  select(-j12_probs)
+```
+
+## Create Derived Variables and Final Dataset
+
+```{r derived-variables}
+# Create composite scores and clean up dataset
+
+df_final <- df_sim %>%
+  mutate(
+    # Knowledge score (correct identifications)
+    knowledge_diseases = J1_west_nile + J1_chikungunya + J1_zika + J1_dengue,
+    knowledge_diseases_errors = J1_malaria + J1_flu + J1_hiv + J1_measles + J1_lyme,
+    
+    # Photo identification score (correct = 1 point each)
+    knowledge_photos = as.integer(J4_photo == 1) + 
+                       as.integer(J5_photo == 2) +
+                       as.integer(J6_photo == 1) + 
+                       as.integer(J7_photo == 2) +
+                       as.integer(J8_photo == 2),
+    
+    # Composite knowledge score (0-10 scale)
+    knowledge_total = pmin(10, knowledge_diseases + knowledge_photos + 
+                            as.integer(J3_outbreak_cause == 1)),
+    
+    # Risk perception score (mean of D1-D4)
+    risk_perception_score = (D1_many_mosquitoes + D2_bite_probability + 
+                              D3_worried_disease + D4_infection_risk) / 4,
+    
+    # Severity perception score (mean of F1-F3)
+    severity_score = (F1_severity_hospital + F2_severity_death + 
+                       F3_severity_function) / 3,
+    
+    # Self-efficacy score (mean of F4-F7)
+    efficacy_score = (F4_efficacy_knowledge + F5_efficacy_info + 
+                       F6_efficacy_identify + F7_efficacy_eliminate) / 4,
+    
+    # Protection count
+    protection_count = D5_protection_1 + D5_protection_2 + D5_protection_3 +
+                       D5_protection_4 + D5_protection_5 + D5_protection_6 +
+                       D5_protection_7 + D5_protection_8 + D5_protection_9 +
+                       D5_protection_10 + D5_protection_12,
+    
+    # Bite frequency composite (mean of available responses)
+    bite_frequency_mean = rowMeans(
+      select(., C1_bites_bedroom, C2_bites_indoor, C3_bites_private_outdoor,
+             C4_bites_shared_green, C5_bites_public, C6_bites_natural),
+      na.rm = TRUE
+    ),
+    
+    # Scenario risk assessment mean
+    scenario_risk_mean = (G1_scenario + G2_scenario + G3_scenario + 
+                           G4_scenario + G5_scenario + G6_scenario) / 6,
+    
+    # Barrier score (H7 + H8)
+    barrier_score = (H7_barrier_annoyance + H8_barrier_time) / 2
+  )
+
+# Apply variable labels
+df_final <- df_final %>%
+  set_variable_labels(
+    A1_sex = "Sex",
+    A2_age = "Age group",
+    A3_region = "Region of residence",
+    A4_education = "Education level",
+    A5_postal_code = "Postal code",
+    A5_departement = "Département",
+    A6_csp = "Socio-professional category",
+    A7_financial_difficulty = "Financial difficulty",
+    geo_zone = "Geographic zone",
+    aedes_colonized = "Aedes colonization rate",
+    summer_temp = "Summer temperature (°C)",
+    climate_suitability = "Climate suitability",
+    median_income = "Median income (€)",
+    poverty_rate = "Poverty rate (%)",
+    urbanization = "Urbanization level",
+    knowledge_total = "Knowledge score (0-10)",
+    risk_perception_score = "Risk perception score (1-7)",
+    severity_score = "Severity perception (1-7)",
+    efficacy_score = "Self-efficacy score (1-7)",
+    protection_count = "Number of protection measures used",
+    bite_frequency_mean = "Mean bite frequency"
+  )
+```
+
+# Descriptive Statistics
+
+## Sample Characteristics (Table 1)
+
+```{r table1-demographics}
+# Create Table 1: Sample characteristics
+table1 <- df_final %>%
+  select(
+    A1_sex, A2_age, A3_region, A4_education, A6_csp, 
+    A7_financial_difficulty, urbanization, geo_zone
+  ) %>%
+  mutate(
+    A7_financial_difficulty = factor(
+      A7_financial_difficulty,
+      levels = 1:4,
+      labels = c("Très difficile", "Difficile", 
+                 "Quelque peu difficile", "Pas difficile du tout")
+    ),
+    A4_education = factor(
+      A4_education,
+      levels = c("Sans le bac", "Bac", "Bac+2", "Bac+3/4", "Bac+5+")
+    )
+  ) %>%
+  tbl_summary(
+    label = list(
+      A1_sex ~ "Sexe",
+      A2_age ~ "Groupe d'âge",
+      A3_region ~ "Région",
+      A4_education ~ "Niveau d'études",
+      A6_csp ~ "Catégorie socio-professionnelle",
+      A7_financial_difficulty ~ "Difficulté financière",
+      urbanization ~ "Niveau d'urbanisation",
+      geo_zone ~ "Zone géographique"
+    ),
+    statistic = list(
+      all_categorical() ~ "{n} ({p}%)"
+    ),
+    digits = list(
+      all_categorical() ~ c(0, 1)
+    )
+  ) %>%
+  modify_header(label = "**Caractéristique**") %>%
+  modify_caption("**Tableau 1. Caractéristiques sociodémographiques de l'échantillon (N = 4,000)**") %>%
+  bold_labels()
+
+table1
+```
+
+## Section B: Outdoor Exposure Summary
+
+```{r table-outdoor-exposure}
+# Labels for outdoor time
+outdoor_labels <- c(
+  "Pas d'accès / pas de temps",
+  "1 à 3 heures",
+  "4 à 6 heures",
+  "7 à 10 heures",
+  "11 à 15 heures",
+  "Plus de 15 heures"
+)
+
+table_section_b <- df_final %>%
+  select(B1_private_outdoor, B2_shared_green, B3_public_commercial, B4_natural_areas) %>%
+  mutate(across(everything(), ~ factor(.x, levels = 1:6, labels = outdoor_labels))) %>%
+  tbl_summary(
+    label = list(
+      B1_private_outdoor ~ "Espaces extérieurs privés",
+      B2_shared_green ~ "Espaces verts partagés",
+      B3_public_commercial ~ "Espaces publics/commerciaux",
+      B4_natural_areas ~ "Zones naturelles éloignées"
+    ),
+    statistic = list(all_categorical() ~ "{n} ({p}%)")
+  ) %>%
+  modify_header(label = "**Temps passé par semaine**") %>%
+  modify_caption("**Section B: Exposition aux espaces extérieurs**") %>%
+  bold_labels()
+
+table_section_b
+```
+
+## Section C: Bite Frequency Summary
+
+```{r table-bite-frequency}
+bite_labels <- c(
+  "Jamais ou presque jamais",
+  "Moins d'une fois par mois",
+  "1 à 3 fois par mois",
+  "1 à 3 fois par semaine",
+  "4 à 6 fois par semaine",
+  "1 à 3 fois par jour",
+  "Plus de 3 fois par jour"
+)
+
+table_section_c <- df_final %>%
+  select(C1_bites_bedroom, C2_bites_indoor, C3_bites_private_outdoor,
+         C4_bites_shared_green, C5_bites_public, C6_bites_natural) %>%
+  mutate(across(everything(), ~ factor(.x, levels = 1:7, labels = bite_labels))) %>%
+  tbl_summary(
+    label = list(
+      C1_bites_bedroom ~ "Chambre à coucher",
+      C2_bites_indoor ~ "Autres espaces intérieurs",
+      C3_bites_private_outdoor ~ "Espaces extérieurs privés",
+      C4_bites_shared_green ~ "Espaces verts partagés",
+      C5_bites_public ~ "Espaces publics/commerciaux",
+      C6_bites_natural ~ "Zones naturelles"
+    ),
+    statistic = list(all_categorical() ~ "{n} ({p}%)"),
+    missing = "ifany",
+    missing_text = "(Non applicable)"
+  ) %>%
+  modify_header(label = "**Fréquence des piqûres**") %>%
+  modify_caption("**Section C: Fréquence des piqûres de moustiques par lieu**") %>%
+  bold_labels()
+
+table_section_c
+```
+
+## Section D: Risk Perception and Protection Measures
+
+```{r table-risk-perception}
+# Likert labels
+likert_labels <- c(
+  "Pas du tout d'accord",
+  "Plutôt pas d'accord",
+  "Légèrement pas d'accord",
+  "Indécis",
+  "Légèrement d'accord",
+  "Plutôt d'accord",
+  "Tout à fait d'accord"
+)
+
+table_section_d_likert <- df_final %>%
+  select(D1_many_mosquitoes, D2_bite_probability, 
+         D3_worried_disease, D4_infection_risk) %>%
+  mutate(across(everything(), ~ factor(.x, levels = 1:7, labels = likert_labels))) %>%
+  tbl_summary(
+    label = list(
+      D1_many_mosquitoes ~ "Je vis dans une région avec beaucoup de moustiques",
+      D2_bite_probability ~ "Probabilité élevée d'être piqué(e)",
+      D3_worried_disease ~ "Inquiet(ète) de contracter une maladie",
+      D4_infection_risk ~ "Risque d'infection par un virus"
+    ),
+    statistic = list(all_categorical() ~ "{n} ({p}%)")
+  ) %>%
+  modify_header(label = "**Perception du risque**") %>%
+  modify_caption("**Section D: Perception du risque (D1-D4)**") %>%
+  bold_labels()
+
+table_section_d_likert
+```
+
+```{r table-protection-measures}
+# Protection measures used (D5)
+table_protection <- df_final %>%
+  summarise(
+    `Vêtements longs` = sum(D5_protection_1),
+    `Répulsifs` = sum(D5_protection_2),
+    `Piège électrique` = sum(D5_protection_3),
+    `Ventilateur/climatisation` = sum(D5_protection_4),
+    `Diffuseur électrique` = sum(D5_protection_5),
+    `Bougies/spirales` = sum(D5_protection_6),
+    `Moustiquaires fenêtres` = sum(D5_protection_7),
+    `Fenêtres fermées (sommeil)` = sum(D5_protection_8),
+    `Moustiquaire lit` = sum(D5_protection_9),
+    `Produits naturels` = sum(D5_protection_10),
+    `Aucune protection` = sum(D5_protection_11),
+    `Autre` = sum(D5_protection_12)
+  ) %>%
+  pivot_longer(everything(), names_to = "Mesure de protection", values_to = "n") %>%
+  mutate(
+    `%` = round(n / N * 100, 1)
+  ) %>%
+  arrange(desc(n)) %>%
+  gt() %>%
+  tab_header(
+    title = "Section D: Mesures de protection utilisées (D5)",
+    subtitle = "Choix multiples possibles"
+  ) %>%
+  fmt_number(columns = n, decimals = 0) %>%
+  cols_label(
+    `Mesure de protection` = "Mesure de protection",
+    n = "N",
+    `%` = "%"
+  )
+
+table_protection
+```
+
+## Likert Scale Summaries (Sections F, G, H)
+
+```{r table-likert-sections}
+# Section F: Severity and Self-efficacy
+table_section_f <- df_final %>%
+  select(F1_severity_hospital:F7_efficacy_eliminate) %>%
+  tbl_summary(
+    label = list(
+      F1_severity_hospital ~ "F1: Hospitalisation possible",
+      F2_severity_death ~ "F2: Décès possible",
+      F3_severity_function ~ "F3: Réduction capacité quotidienne",
+      F4_efficacy_knowledge ~ "F4: Connais les mesures de protection",
+      F5_efficacy_info ~ "F5: Sais où trouver l'information",
+      F6_efficacy_identify ~ "F6: Confiant pour identifier les gîtes",
+      F7_efficacy_eliminate ~ "F7: Confiant pour éliminer les gîtes"
+    ),
+    type = list(everything() ~ "continuous"),
+    statistic = list(all_continuous() ~ "{mean} ({sd})"),
+    digits = list(all_continuous() ~ 2)
+  ) %>%
+  modify_header(label = "**Item**") %>%
+  modify_caption("**Section F: Sévérité perçue et auto-efficacité (Moyenne, Écart-type)**") %>%
+  bold_labels()
+
+table_section_f
+```
+
+## Knowledge Section (J) Summary
+
+```{r table-knowledge}
+# J1: Disease identification
+table_j1 <- df_final %>%
+  summarise(
+    `Fièvre du Nil occidental (correct)` = mean(J1_west_nile) * 100,
+    `Chikungunya (correct)` = mean(J1_chikungunya) * 100,
+    `Zika (correct)` = mean(J1_zika) * 100,
+    `Dengue (correct)` = mean(J1_dengue) * 100,
+    `Paludisme (incorrect)` = mean(J1_malaria) * 100,
+    `Grippe (incorrect)` = mean(J1_flu) * 100,
+    `VIH/SIDA (incorrect)` = mean(J1_hiv) * 100,
+    `Rougeole (incorrect)` = mean(J1_measles) * 100,
+    `Maladie de Lyme (incorrect)` = mean(J1_lyme) * 100
+  ) %>%
+  pivot_longer(everything(), names_to = "Maladie", values_to = "% sélectionné") %>%
+  mutate(`% sélectionné` = round(`% sélectionné`, 1)) %>%
+  gt() %>%
+  tab_header(
+    title = "Section J1: Identification des maladies transmises par moustiques",
+    subtitle = "Pourcentage ayant sélectionné chaque option"
+  )
+
+table_j1
+```
+
+## Composite Scores Summary
+
+```{r table-composite-scores}
+table_scores <- df_final %>%
+  select(
+    knowledge_total, risk_perception_score, severity_score,
+    efficacy_score, protection_count, bite_frequency_mean,
+    scenario_risk_mean, barrier_score
+  ) %>%
+  tbl_summary(
+    label = list(
+      knowledge_total ~ "Score de connaissance (0-10)",
+      risk_perception_score ~ "Score perception du risque (1-7)",
+      severity_score ~ "Score sévérité perçue (1-7)",
+      efficacy_score ~ "Score auto-efficacité (1-7)",
+      protection_count ~ "Nombre de mesures de protection",
+      bite_frequency_mean ~ "Fréquence moyenne des piqûres (1-7)",
+      scenario_risk_mean ~ "Évaluation moyenne des scénarios (1-7)",
+      barrier_score ~ "Score barrières perçues (1-7)"
+    ),
+    type = list(everything() ~ "continuous"),
+    statistic = list(
+      all_continuous() ~ "{mean} ({sd}) [{min}, {max}]"
+    ),
+    digits = list(all_continuous() ~ 2)
+  ) %>%
+  modify_header(label = "**Score composite**") %>%
+  modify_caption("**Scores composites: Statistiques descriptives**") %>%
+  bold_labels()
+
+table_scores
+```
+
+## Stratified Analysis by Geographic Zone
+
+```{r table-stratified-zone}
+table_by_zone <- df_final %>%
+  select(
+    geo_zone, knowledge_total, risk_perception_score,
+    protection_count, bite_frequency_mean, D5_any_protection
+  ) %>%
+  tbl_summary(
+    by = geo_zone,
+    label = list(
+      knowledge_total ~ "Score de connaissance",
+      risk_perception_score ~ "Score perception du risque",
+      protection_count ~ "Nombre de mesures",
+      bite_frequency_mean ~ "Fréquence des piqûres",
+      D5_any_protection ~ "Utilise au moins une protection"
+    ),
+    type = list(
+      knowledge_total ~ "continuous",
+      risk_perception_score ~ "continuous",
+      protection_count ~ "continuous",
+      bite_frequency_mean ~ "continuous",
+      D5_any_protection ~ "dichotomous"
+    ),
+    statistic = list(
+      all_continuous() ~ "{mean} ({sd})",
+      all_dichotomous() ~ "{n} ({p}%)"
+    ),
+    digits = list(all_continuous() ~ 2)
+  ) %>%
+  add_p() %>%
+  modify_header(label = "**Variable**") %>%
+  modify_caption("**Comparaison par zone géographique (Nord, Centre, Sud)**") %>%
+  bold_labels()
+
+table_by_zone
+```
+
+# Visualizations
+
+## Regional Distribution of Key Outcomes
+
+```{r fig-regional-bites, fig.width=12, fig.height=8}
+# Bite frequency by region
+p_bites_region <- df_final %>%
+  group_by(A3_region, geo_zone) %>%
+  summarise(
+    mean_bites = mean(bite_frequency_mean, na.rm = TRUE),
+    se_bites = sd(bite_frequency_mean, na.rm = TRUE) / sqrt(n()),
+    .groups = "drop"
+  ) %>%
+  mutate(A3_region = fct_reorder(A3_region, mean_bites)) %>%
+  ggplot(aes(x = A3_region, y = mean_bites, fill = geo_zone)) +
+  geom_col() +
+  geom_errorbar(
+    aes(ymin = mean_bites - 1.96 * se_bites, 
+        ymax = mean_bites + 1.96 * se_bites),
+    width = 0.2
+  ) +
+  coord_flip() +
+  scale_fill_manual(
+    values = c("South" = "#e41a1c", "Central" = "#ff7f00", "North" = "#377eb8"),
+    labels = c("Sud", "Centre", "Nord")
+  ) +
+  labs(
+    title = "Fréquence moyenne des piqûres de moustiques par région",
+    subtitle = "Moyennes avec intervalles de confiance à 95%",
+    x = NULL,
+    y = "Fréquence moyenne (échelle 1-7)",
+    fill = "Zone"
+  ) +
+  theme_mkp()
+
+p_bites_region
+```
+
+```{r fig-regional-protection, fig.width=12, fig.height=8}
+# Protection usage by region
+p_protection_region <- df_final %>%
+  group_by(A3_region, geo_zone) %>%
+  summarise(
+    pct_protection = mean(D5_any_protection) * 100,
+    se_protection = sqrt(pct_protection * (100 - pct_protection) / n()),
+    .groups = "drop"
+  ) %>%
+  mutate(A3_region = fct_reorder(A3_region, pct_protection)) %>%
+  ggplot(aes(x = A3_region, y = pct_protection, fill = geo_zone)) +
+  geom_col() +
+  geom_errorbar(
+    aes(ymin = pmax(0, pct_protection - 1.96 * se_protection), 
+        ymax = pmin(100, pct_protection + 1.96 * se_protection)),
+    width = 0.2
+  ) +
+  coord_flip() +
+  scale_fill_manual(
+    values = c("South" = "#e41a1c", "Central" = "#ff7f00", "North" = "#377eb8"),
+    labels = c("Sud", "Centre", "Nord")
+  ) +
+  labs(
+    title = "Utilisation de mesures de protection par région",
+    subtitle = "Pourcentage utilisant au moins une mesure",
+    x = NULL,
+    y = "Pourcentage (%)",
+    fill = "Zone"
+  ) +
+  theme_mkp()
+
+p_protection_region
+```
+
+## Risk Perception Distribution
+
+```{r fig-risk-perception, fig.width=10, fig.height=6}
+# Risk perception by geographic zone
+p_risk_zone <- df_final %>%
+  select(geo_zone, D1_many_mosquitoes, D2_bite_probability, 
+         D3_worried_disease, D4_infection_risk) %>%
+  pivot_longer(
+    cols = starts_with("D"),
+    names_to = "item",
+    values_to = "score"
+  ) %>%
+  mutate(
+    item = factor(
+      item,
+      levels = c("D1_many_mosquitoes", "D2_bite_probability", 
+                 "D3_worried_disease", "D4_infection_risk"),
+      labels = c("Beaucoup de\nmoustiques", "Probabilité\nélevée piqûre",
+                 "Inquiet\nmaladie", "Risque\ninfection")
+    ),
+    geo_zone = factor(
+      geo_zone,
+      levels = c("South", "Central", "North"),
+      labels = c("Sud", "Centre", "Nord")
+    )
+  ) %>%
+  ggplot(aes(x = item, y = score, fill = geo_zone)) +
+  geom_boxplot(outlier.size = 0.5, alpha = 0.8) +
+  scale_fill_manual(
+    values = c("Sud" = "#e41a1c", "Centre" = "#ff7f00", "Nord" = "#377eb8")
+  ) +
+  labs(
+    title = "Distribution de la perception du risque par zone géographique",
+    subtitle = "Échelle de Likert 1 (pas du tout d'accord) à 7 (tout à fait d'accord)",
+    x = NULL,
+    y = "Score",
+    fill = "Zone"
+  ) +
+  theme_mkp() +
+  theme(axis.text.x = element_text(size = 9))
+
+p_risk_zone
+```
+
+## Knowledge Score Distribution
+
+```{r fig-knowledge, fig.width=10, fig.height=6}
+# Knowledge score distribution by zone and education
+p_knowledge <- df_final %>%
+  mutate(
+    edu_grouped = case_when(
+      A4_education %in% c("Sans le bac", "Bac") ~ "≤ Bac",
+      A4_education == "Bac+2" ~ "Bac+2",
+      TRUE ~ "≥ Bac+3"
+    ),
+    geo_zone = factor(
+      geo_zone,
+      levels = c("South", "Central", "North"),
+      labels = c("Sud", "Centre", "Nord")
+    )
+  ) %>%
+  ggplot(aes(x = knowledge_total, fill = geo_zone)) +
+  geom_histogram(binwidth = 1, position = "dodge", alpha = 0.8) +
+  facet_wrap(~ edu_grouped, ncol = 3) +
+  scale_fill_manual(
+    values = c("Sud" = "#e41a1c", "Centre" = "#ff7f00", "Nord" = "#377eb8")
+  ) +
+  labs(
+    title = "Distribution du score de connaissance par niveau d'éducation et zone",
+    subtitle = "Score composite (0-10)",
+    x = "Score de connaissance",
+    y = "Effectif",
+    fill = "Zone"
+  ) +
+  theme_mkp()
+
+p_knowledge
+```
+
+## Protection Measures Usage
+
+```{r fig-protection-measures, fig.width=12, fig.height=7}
+# Protection measures by zone
+protection_summary <- df_final %>%
+  group_by(geo_zone) %>%
+  summarise(
+    `Vêtements longs` = mean(D5_protection_1) * 100,
+    `Répulsifs` = mean(D5_protection_2) * 100,
+    `Piège électrique` = mean(D5_protection_3) * 100,
+    `Ventilateur/AC` = mean(D5_protection_4) * 100,
+    `Diffuseur` = mean(D5_protection_5) * 100,
+    `Bougies/spirales` = mean(D5_protection_6) * 100,
+    `Moustiquaires` = mean(D5_protection_7) * 100,
+    `Fenêtres fermées` = mean(D5_protection_8) * 100,
+    `Moustiquaire lit` = mean(D5_protection_9) * 100,
+    `Produits naturels` = mean(D5_protection_10) * 100,
+    `Aucune` = mean(D5_protection_11) * 100,
+    .groups = "drop"
+  ) %>%
+  pivot_longer(-geo_zone, names_to = "measure", values_to = "pct") %>%
+  mutate(
+    geo_zone = factor(
+      geo_zone,
+      levels = c("South", "Central", "North"),
+      labels = c("Sud", "Centre", "Nord")
+    ),
+    measure = fct_reorder(measure, pct, .fun = mean)
+  )
+
+p_protection_measures <- ggplot(
+  protection_summary,
+  aes(x = measure, y = pct, fill = geo_zone)
+) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  coord_flip() +
+  scale_fill_manual(
+    values = c("Sud" = "#e41a1c", "Centre" = "#ff7f00", "Nord" = "#377eb8")
+  ) +
+  labs(
+    title = "Utilisation des mesures de protection par zone géographique",
+    x = NULL,
+    y = "Pourcentage (%)",
+    fill = "Zone"
+  ) +
+  theme_mkp()
+
+p_protection_measures
+```
+
+## Correlation Between Key Variables
+
+```{r fig-correlations, fig.width=10, fig.height=8}
+# Correlation matrix of composite scores
+cor_vars <- df_final %>%
+  select(
+    knowledge_total, risk_perception_score, severity_score,
+    efficacy_score, protection_count, bite_frequency_mean,
+    barrier_score
+  ) %>%
+  drop_na()
+
+cor_matrix <- cor(cor_vars)
+
+# Create correlation plot data
+cor_data <- cor_matrix %>%
+  as.data.frame() %>%
+  rownames_to_column("var1") %>%
+  pivot_longer(-var1, names_to = "var2", values_to = "correlation") %>%
+  mutate(
+    var1 = factor(var1, levels = colnames(cor_matrix)),
+    var2 = factor(var2, levels = rev(colnames(cor_matrix)))
+  )
+
+# Variable labels for plot
+var_labels <- c(
+  "knowledge_total" = "Connaissance",
+  "risk_perception_score" = "Perception risque",
+  "severity_score" = "Sévérité perçue",
+  "efficacy_score" = "Auto-efficacité",
+  "protection_count" = "Nb protections",
+  "bite_frequency_mean" = "Fréq. piqûres",
+  "barrier_score" = "Barrières"
+)
+
+p_cor <- ggplot(cor_data, aes(x = var1, y = var2, fill = correlation)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = round(correlation, 2)), size = 3.5) +
+  scale_fill_gradient2(
+    low = "#2166ac", mid = "white", high = "#b2182b",
+    midpoint = 0, limits = c(-1, 1)
+  ) +
+  scale_x_discrete(labels = var_labels) +
+  scale_y_discrete(labels = var_labels) +
+  labs(
+    title = "Matrice de corrélation des scores composites",
+    x = NULL,
+    y = NULL,
+    fill = "Corrélation"
+  ) +
+  theme_mkp() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.grid = element_blank()
+  )
+
+p_cor
+```
+
+## Geographic Gradient Visualization
+
+```{r fig-gradient-map, fig.width=12, fig.height=8}
+# Summary statistics by region for mapping
+region_summary <- df_final %>%
+  group_by(A3_region) %>%
+  summarise(
+    n = n(),
+    mean_bites = mean(bite_frequency_mean, na.rm = TRUE),
+    mean_risk = mean(risk_perception_score, na.rm = TRUE),
+    pct_protection = mean(D5_any_protection) * 100,
+    mean_knowledge = mean(knowledge_total, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  left_join(region_classification, by = c("A3_region" = "region"))
+
+# Create faceted bar chart showing gradient
+region_summary_long <- region_summary %>%
+  select(A3_region, geo_zone, mean_bites, mean_risk, pct_protection, mean_knowledge) %>%
+  pivot_longer(
+    cols = c(mean_bites, mean_risk, pct_protection, mean_knowledge),
+    names_to = "metric",
+    values_to = "value"
+  ) %>%
+  mutate(
+    metric = factor(
+      metric,
+      levels = c("mean_bites", "mean_risk", "pct_protection", "mean_knowledge"),
+      labels = c("Fréquence piqûres\n(1-7)", "Perception risque\n(1-7)",
+                 "Protection utilisée\n(%)", "Connaissance\n(0-10)")
+    ),
+    geo_zone = factor(geo_zone, levels = c("South", "Central", "North"))
+  )
+
+p_gradient <- ggplot(
+  region_summary_long,
+  aes(x = fct_reorder(A3_region, value, .fun = mean), 
+      y = value, fill = geo_zone)
+) +
+  geom_col() +
+  facet_wrap(~ metric, scales = "free", ncol = 2) +
+  coord_flip() +
+  scale_fill_manual(
+    values = c("South" = "#e41a1c", "Central" = "#ff7f00", "North" = "#377eb8"),
+    labels = c("Sud", "Centre", "Nord")
+  ) +
+  labs(
+    title = "Gradient géographique Nord-Sud: Indicateurs clés par région",
+    x = NULL,
+    y = "Valeur",
+    fill = "Zone"
+  ) +
+  theme_mkp() +
+  theme(strip.text = element_text(size = 10))
+
+p_gradient
+```
+
+# Data Export
+
+```{r export-data}
+# Select final variables for export
+df_export <- df_final %>%
+  select(
+    # Identifiers
+    id,
+    
+    # Section A: Demographics
+    A1_sex, A2_age, A3_region, A4_education, A5_postal_code, 
+    A5_departement, A6_csp, A7_financial_difficulty,
+    
+    # Linked data
+    geo_zone, aedes_colonized, aedes_present_dept, summer_temp,
+    climate_suitability, median_income, poverty_rate, urbanization,
+    
+    # Section B: Outdoor exposure
+    B1_private_outdoor, B2_shared_green, B3_public_commercial, B4_natural_areas,
+    B5_reduced_space_1, B5_reduced_space_2, B5_reduced_space_3, 
+    B5_reduced_space_4, B5_no_reduction,
+    
+    # Section C: Bite frequency
+    C1_bites_bedroom, C2_bites_indoor, C3_bites_private_outdoor,
+    C4_bites_shared_green, C5_bites_public, C6_bites_natural,
+    
+    # Section D: Risk perception and protection
+    D1_many_mosquitoes, D2_bite_probability, D3_worried_disease, D4_infection_risk,
+    D5_protection_1, D5_protection_2, D5_protection_3, D5_protection_4,
+    D5_protection_5, D5_protection_6, D5_protection_7, D5_protection_8,
+    D5_protection_9, D5_protection_10, D5_protection_11, D5_protection_12,
+    D5_any_protection,
+    D6_info_1, D6_info_2, D6_info_3, D6_info_4, D6_info_5, D6_info_6,
+    D6_info_7, D6_info_8, D6_info_9, D6_info_10, D6_info_11, D6_info_12,
+    D6_info_13, D6_info_14, D6_info_15, D6_any_info,
+    
+    # Section E: Protection frequency
+    E1_freq_clothing, E2_freq_repellent, E3_freq_trap, E4_freq_fan_ac,
+    E5_freq_diffuser, E6_freq_candles, E7_freq_windows, E8_freq_bednet,
+    E9_freq_natural, E10_freq_other,
+    
+    # Section F: Severity and self-efficacy
+    F1_severity_hospital, F2_severity_death, F3_severity_function,
+    F4_efficacy_knowledge, F5_efficacy_info, F6_efficacy_identify, 
+    F7_efficacy_eliminate,
+    
+    # Section G: Scenarios
+    G1_scenario, G2_scenario, G3_scenario, G4_scenario, G5_scenario, G6_scenario,
+    
+    # Section H: Cues and beliefs
+    H1_cue_outdoor, H2_cue_indoor, H3_cue_alerts,
+    H4_belief_repellent_effective, H5_belief_repellent_safe,
+    H6_belief_protection_works, H7_barrier_annoyance, H8_barrier_time,
+    
+    # Section I: Repellent beliefs
+    I1_concern_health, I2_feasibility, I3_necessity, I4_effectiveness,
+    I5_benefit_balance, I6_collective, I7_social_norm, I8_authority,
+    I9_toxicity_concern, I10_knowledge,
+    
+    # Section J: Knowledge
+    J1_west_nile, J1_chikungunya, J1_zika, J1_dengue, J1_malaria,
+    J1_flu, J1_hiv, J1_measles, J1_lyme, J1_none, J1_dont_know,
+    J2_arbovirus_experience, J3_outbreak_cause,
+    J4_photo, J5_photo, J6_photo, J7_photo, J8_photo,
+    J9_endemic_residence,
+    J10_priority_1, J10_priority_2, J10_priority_3, J10_priority_4,
+    J10_priority_5, J10_dont_know,
+    J11_case_awareness, J12_fumigation_awareness,
+    
+    # Composite scores
+    knowledge_diseases, knowledge_diseases_errors, knowledge_photos,
+    knowledge_total, risk_perception_score, severity_score, efficacy_score,
+    protection_count, bite_frequency_mean, scenario_risk_mean, barrier_score
+  )
+
+# Save as CSV
+write_csv(df_export, "mkp_kap_simulated_data.csv")
+
+# Save as RDS (preserves labels and factors)
+saveRDS(df_export, "mkp_kap_simulated_data.rds")
+
+# Confirmation message
+cat("Data exported successfully!\n")
+cat("- CSV file: mkp_kap_simulated_data.csv\n")
+cat("- RDS file: mkp_kap_simulated_data.rds\n")
+cat("- Total observations:", nrow(df_export), "\n")
+cat("- Total variables:", ncol(df_export), "\n")
+```
+
+# Data Dictionary
+
+```{r data-dictionary}
+# Create data dictionary
+data_dictionary <- tibble(
+  Variable = names(df_export),
+  Type = map_chr(df_export, ~ class(.x)[1]),
+  Description = c(
+    "Unique participant identifier",
+    "Sex (Femme/Homme)",
+    "Age group (18-29 to 70-79)",
+    "Region of residence",
+    "Education level",
+    "Postal code (5 digits)",
+    "Département code",
+    "Socio-professional category",
+    "Financial difficulty (1=Very difficult to 4=Not difficult)",
+    "Geographic zone (South/Central/North)",
+    "Regional Aedes colonization rate",
+    "Département Aedes presence (0/1)",
+    "Average summer temperature (°C)",
+    "Climate suitability (1=High to 3=Low)",
+    "Regional median income (€)",
+    "Regional poverty rate (%)",
+    "Urbanization level",
+    "B1: Time in private outdoor spaces (1-6)",
+    "B2: Time in shared green spaces (1-6)",
+    "B3: Time in public commercial spaces (1-6)",
+    "B4: Time in natural areas (1-6)",
+    "B5: Reduced time private outdoor due to mosquitoes (0/1)",
+    "B5: Reduced time shared green due to mosquitoes (0/1)",
+    "B5: Reduced time public commercial due to mosquitoes (0/1)",
+    "B5: Reduced time natural areas due to mosquitoes (0/1)",
+    "B5: No reduction in time (0/1)",
+    "C1: Bite frequency bedroom (1-7)",
+    "C2: Bite frequency other indoor (1-7)",
+    "C3: Bite frequency private outdoor (1-7, skip logic)",
+    "C4: Bite frequency shared green (1-7, skip logic)",
+    "C5: Bite frequency public (1-7, skip logic)",
+    "C6: Bite frequency natural areas (1-7, skip logic)",
+    "D1: Live in high mosquito area (1-7 Likert)",
+    "D2: High bite probability (1-7 Likert)",
+    "D3: Worried about disease (1-7 Likert)",
+    "D4: Infection risk (1-7 Likert)",
+    "D5: Uses long sleeves/pants (0/1)",
+    "D5: Uses repellents (0/1)",
+    "D5: Uses electric trap (0/1)",
+    "D5: Uses fan/AC (0/1)",
+    "D5: Uses plug-in diffuser (0/1)",
+    "D5: Uses candles/coils (0/1)",
+    "D5: Uses window screens (0/1)",
+    "D5: Sleeps with windows closed (0/1)",
+    "D5: Uses bed net (0/1)",
+    "D5: Uses natural products (0/1)",
+    "D5: No protection used (0/1, exclusive)",
+    "D5: Uses other method (0/1)",
+    "D5: Uses any protection (0/1, derived)",
+    "D6: Info from health professionals (0/1)",
+    "D6: Info from local authorities (0/1)",
+    "D6: Info from regional authorities (0/1)",
+    "D6: Info from national authorities (0/1)",
+    "D6: Info from social media (0/1)",
+    "D6: Info from family/friends (0/1)",
+    "D6: Info from educational institutions (0/1)",
+    "D6: Info from institutional websites (0/1)",
+    "D6: Info from TV/news (0/1)",
+    "D6: Info from print press (0/1)",
+    "D6: Info from radio (0/1)",
+    "D6: Info from product ads (0/1)",
+    "D6: Don't remember source (0/1)",
+    "D6: No information received (0/1, exclusive)",
+    "D6: Other source (0/1)",
+    "D6: Received any information (0/1, derived)",
+    "E1: Frequency long clothing (1-5, skip logic)",
+    "E2: Frequency repellent (1-6, skip logic)",
+    "E3: Frequency electric trap (1-6, skip logic)",
+    "E4: Frequency fan/AC (1-6, skip logic)",
+    "E5: Frequency diffuser (1-6, skip logic)",
+    "E6: Frequency candles/coils (1-6, skip logic)",
+    "E7: Frequency closed windows (1-5, skip logic)",
+    "E8: Frequency bed net (1-5, skip logic)",
+    "E9: Frequency natural products (1-6, skip logic)",
+    "E10: Frequency other method (1-6, skip logic)",
+    "F1: Disease can cause hospitalization (1-7 Likert)",
+    "F2: Can die from infection (1-7 Likert)",
+    "F3: Disease reduces daily function (1-7 Likert)",
+    "F4: Know best protection measures (1-7 Likert)",
+    "F5: Know where to find info (1-7 Likert)",
+    "F6: Confident identifying breeding sites (1-7 Likert)",
+    "F7: Confident eliminating breeding sites (1-7 Likert)",
+    "G1: Scenario 1 bite probability (1-7 Likert)",
+    "G2: Scenario 2 bite probability (1-7 Likert)",
+    "G3: Scenario 3 bite probability (1-7 Likert)",
+    "G4: Scenario 4 bite probability (1-7 Likert)",
+    "G5: Scenario 5 bite probability (1-7 Likert)",
+    "G6: Scenario 6 bite probability (1-7 Likert)",
+    "H1: Outdoor activities trigger protection thoughts (1-7 Likert)",
+    "H2: Indoor mosquitoes trigger protection thoughts (1-7 Likert)",
+    "H3: Disease alerts would trigger thoughts (1-7 Likert)",
+    "H4: Repellents (DEET) protect against bites (1-7 Likert)",
+    "H5: Repellents (DEET) are safe (1-7 Likert)",
+    "H6: Can avoid bites with protection (1-7 Likert)",
+    "H7: Protection more annoying than mosquitoes (1-7 Likert)",
+    "H8: Protection takes too much time (1-7 Likert)",
+    "I1: Concern about health effects (1-7 Likert, skip logic)",
+    "I2: Regular use is feasible (1-7 Likert, skip logic)",
+    "I3: Use necessary given health (1-7 Likert, skip logic)",
+    "I4: Repellents are effective (1-7 Likert, skip logic)",
+    "I5: Benefits outweigh drawbacks (1-7 Likert, skip logic)",
+    "I6: Repellent use is collective action (1-7 Likert, skip logic)",
+    "I7: People around me use repellents (1-7 Likert, skip logic)",
+    "I8: Authority recommendations encourage use (1-7 Likert, skip logic)",
+    "I9: Repellents contain toxic products (1-7 Likert, skip logic)",
+    "I10: Have sufficient knowledge (1-7 Likert, skip logic)",
+    "J1: Selected West Nile fever (0/1, correct)",
+    "J1: Selected Chikungunya (0/1, correct)",
+    "J1: Selected Zika (0/1, correct)",
+    "J1: Selected Dengue (0/1, correct)",
+    "J1: Selected Malaria (0/1, incorrect)",
+    "J1: Selected Flu (0/1, incorrect)",
+    "J1: Selected HIV/AIDS (0/1, incorrect)",
+    "J1: Selected Measles (0/1, incorrect)",
+    "J1: Selected Lyme (0/1, incorrect)",
+    "J1: Selected None (0/1, exclusive)",
+    "J1: Selected Don't know (0/1, exclusive)",
+    "J2: Personal/acquaintance arbovirus experience (1-4)",
+    "J3: Cause of autochthonous outbreak (1-6)",
+    "J4: Tiger mosquito photo 1 (1-4)",
+    "J5: Tiger mosquito photo 2 (1-4)",
+    "J6: Tiger mosquito photo 3 (1-4)",
+    "J7: Tiger mosquito photo 4 (1-4)",
+    "J8: Tiger mosquito photo 5 (1-4)",
+    "J9: Lived in endemic territory (1-5)",
+    "J10: Priority measure 1 isolation (0/1)",
+    "J10: Priority measure 2 protect from bites (0/1, correct)",
+    "J10: Priority measure 3 antibiotics (0/1, incorrect)",
+    "J10: Priority measure 4 avoid contact (0/1)",
+    "J10: Priority measure 5 disinfect surfaces (0/1)",
+    "J10: Don't know priority measure (0/1)",
+    "J11: Awareness of reported cases (1-6)",
+    "J12: Awareness of fumigation operations (1-4)",
+    "Composite: Correct disease identifications (0-4)",
+    "Composite: Incorrect disease selections (0-5)",
+    "Composite: Correct photo identifications (0-5)",
+    "Composite: Total knowledge score (0-10)",
+    "Composite: Risk perception mean (1-7)",
+    "Composite: Severity perception mean (1-7)",
+    "Composite: Self-efficacy mean (1-7)",
+    "Composite: Number of protection measures (0-11)",
+    "Composite: Mean bite frequency (1-7)",
+    "Composite: Mean scenario risk assessment (1-7)",
+    "Composite: Barrier score mean (1-7)"
+  )
+)
+
+# Display first 50 variables
+data_dictionary %>%
+  slice(1:50) %>%
+  gt() %>%
+  tab_header(
+    title = "Data Dictionary (Variables 1-50)",
+    subtitle = "MKP-KAP Simulated Dataset"
+  ) %>%
+  cols_width(
+    Variable ~ px(200),
+    Type ~ px(100),
+    Description ~ px(400)
+  )
+```
+
+# Session Information
+
+```{r session-info}
+sessionInfo()
+```
+
+---
+
+**End of Statistical Analysis Plan and Simulation Code**
+
+*Generated: `r Sys.time()`*
