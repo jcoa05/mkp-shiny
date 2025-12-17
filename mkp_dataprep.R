@@ -445,6 +445,13 @@ app_data <- list(
 # ----------------------------------------------------------------------------
 
 cat("Saving app data to:", OUTPUT_PATH, "\n")
+
+output_dir <- dirname(OUTPUT_PATH)
+if (!dir.exists(output_dir)) {
+  cat("Creating directory:", output_dir, "\n")
+  dir.create(output_dir, recursive = TRUE)
+}
+
 saveRDS(app_data, OUTPUT_PATH)
 
 cat("\n=== Data Preparation Complete ===\n")
