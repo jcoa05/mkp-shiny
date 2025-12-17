@@ -799,50 +799,54 @@ server <- function(input, output, session) {
     df <- df_concordance()
     
     if (input$concordance_view == "quadrant") {
-      p <- plot_ly(df, 
-                   x = ~climate_risk_rank, 
-                   y = ~protection_rank,
-                   type = "scatter",
-                   mode = "markers",
-                   color = ~concordance_cat_dynamic,
-                   colors = colors_concordance,
-                   marker = list(size = 12, opacity = 0.7),
-                   text = ~paste0(
-                     "<b>", dept_name, "</b> (", departement, ")<br>",
-                     "Climate Risk Rank: ", round(climate_risk_rank * 100, 0), "%<br>",
-                     "Protection Rank: ", round(protection_rank * 100, 0), "%<br>",
-                     "Gap: ", round(dept_concordance_gap, 2), "<br>",
-                     "Status: ", concordance_cat_dynamic
-                   ),
-                   hoverinfo = "text") %>%
+      # Get threshold value
+      thresh <- input$concordance_threshold
+      
+      # Create base plot with markers
+      p <- plot_ly() %>%
+        # Add the scatter points first
+        add_markers(
+          data = df,
+          x = ~climate_risk_rank, 
+          y = ~protection_rank,
+          color = ~concordance_cat_dynamic,
+          colors = colors_concordance,
+          marker = list(size = 12, opacity = 0.7),
+          text = ~paste0(
+            "<b>", dept_name, "</b> (", departement, ")<br>",
+            "Climate Risk Rank: ", round(climate_risk_rank * 100, 0), "%<br>",
+            "Protection Rank: ", round(protection_rank * 100, 0), "%<br>",
+            "Gap: ", round(dept_concordance_gap, 2), "<br>",
+            "Status: ", concordance_cat_dynamic
+          ),
+          hoverinfo = "text"
+        ) %>%
         # Add diagonal line (perfect concordance)
-        add_trace(
-          x = c(0, 1),
-          y = c(0, 1),
-          type = "scatter",
-          mode = "lines",
+        add_segments(
+          x = 0, xend = 1,
+          y = 0, yend = 1,
           line = list(color = "gray", dash = "dash", width = 2),
           showlegend = FALSE,
-          hoverinfo = "skip"
+          hoverinfo = "skip",
+          inherit = FALSE
         ) %>%
-        # Add threshold bands
-        add_trace(
-          x = c(0, 1),
-          y = c(-input$concordance_threshold, 1 - input$concordance_threshold),
-          type = "scatter",
-          mode = "lines",
+        # Add lower threshold band
+        add_segments(
+          x = 0, xend = 1,
+          y = -thresh, yend = 1 - thresh,
           line = list(color = "gray", dash = "dot", width = 1),
           showlegend = FALSE,
-          hoverinfo = "skip"
+          hoverinfo = "skip",
+          inherit = FALSE
         ) %>%
-        add_trace(
-          x = c(0, 1),
-          y = c(input$concordance_threshold, 1 + input$concordance_threshold),
-          type = "scatter",
-          mode = "lines",
+        # Add upper threshold band
+        add_segments(
+          x = 0, xend = 1,
+          y = thresh, yend = 1 + thresh,
           line = list(color = "gray", dash = "dot", width = 1),
           showlegend = FALSE,
-          hoverinfo = "skip"
+          hoverinfo = "skip",
+          inherit = FALSE
         ) %>%
         layout(
           xaxis = list(title = "Climate Risk Rank (0 = Low, 1 = High)", range = c(-0.05, 1.05)),
